@@ -2,7 +2,7 @@ import { Component, OnInit, ViewChild, AfterViewInit } from '@angular/core';
 
 import { HttpClient, HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { fromEvent, BehaviorSubject } from 'rxjs';
-import { map, debounceTime, catchError } from 'rxjs/operators';
+import { map, debounceTime, catchError, mergeMap } from 'rxjs/operators';
 import { throwError } from "rxjs";
 
 
@@ -189,6 +189,21 @@ updateFilter(val: any, ext) {
     );
   }
 
+  findAlltemp() {
+   return this.httpClient.get('./assets/data/company.json').pipe(map(
+      (data: any) => {
+        // cache our list
+        this.temp = data;
+
+        // push our inital complete list
+        this.rows = [...this.temp];
+      },
+      (err: HttpErrorResponse) => {
+        console.log (err.message);
+      }
+    ));
+  }
+
   getDataJson() {
     this.rows = this.temp = [
       {
@@ -240,7 +255,7 @@ updateFilter(val: any, ext) {
         "company": "Dogspa"
       }
     ];
-  }
+  } 
   
   onFileDragging($event) {
     console.log($event);
@@ -259,8 +274,8 @@ updateFilter(val: any, ext) {
   /**
    * handle file from browsing
    */
-  fileBrowseHandler(files) {
-    this.prepareFilesList(files);
+  async fileBrowseHandler(files) {
+    await this.prepareFilesList(files);
   }
 
   /**
@@ -295,11 +310,15 @@ updateFilter(val: any, ext) {
    * Convert Files list to normal array list
    * @param files (Files List)
    */
-  prepareFilesList(files: Array<any>) {
+  async prepareFilesList(files: Array<any>) {
     for (const item of files) {
       item.progress = 0;
       this.files.push(item);
+      console.log('file upload', item.name);
       this.upload(item)
+      .then(x => console.log('upload then', x)).catch(err=> console.log('error', err))
+      // try{await this.upload(item)} catch(err) {console.log(err)}
+      console.log('upload end', item.name);
     }
     //this.uploadFilesSimulator(0);
   }
@@ -319,31 +338,47 @@ updateFilter(val: any, ext) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   }
-
+  uploadfile(formData){
+    return this.findAlltemp()
+        .pipe(mergeMap(res=> {
+          return this.httpClient
+          .post("yout-url-here", formData, {
+            reportProgress: true,
+            observe: "events"
+          })
+          .pipe(catchError((err: any) => {
+              // alert(err.message);
+              console.log('i', err.message)
+              return throwError(err.message);
+            }));
+          }),catchError((err: any) => {
+            // alert(err.message);
+              console.log('o', err.message)
+            return throwError(err.message); 
+          }));
+  }
   upload(file) {
       file.progress = 1;
       const formData = new FormData();
       formData.append("file", file);
-
-      this.httpClient
-        .post("yout-url-here", formData, {
-          reportProgress: true,
-          observe: "events"
-        })
+      console.log('upload start', file.name);
+      return this.uploadfile(formData)
         .pipe(
           map((event: any) => {
             if (event.type == HttpEventType.UploadProgress) {
               file.progress = Math.round((100 / event.total) * event.loaded);
+              console.log(event.type, file.progress)
             } else if (event.type == HttpEventType.Response) {
               file.progress = null;
+              console.log(event.type, file.progress)
             }
+            
           }),
           catchError((err: any) => {
             file.progress = null;
             // alert(err.message);
             return throwError(err.message);
           })
-        )
-        .toPromise();
+        ).toPromise()
     }
 }
